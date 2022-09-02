@@ -36,8 +36,12 @@ func Test_colorscheme()
   let g:color_count = 0
   augroup TestColors
     au!
-    au ColorScheme * let g:color_count += 1| let g:after_colors = g:color_count
-    au ColorSchemePre * let g:color_count += 1 |let g:before_colors = g:color_count
+    au ColorScheme * let g:color_count += 1
+                 \ | let g:after_colors = g:color_count
+                 \ | let g:color_after = expand('<amatch>')
+    au ColorSchemePre * let g:color_count += 1
+                    \ | let g:before_colors = g:color_count
+                    \ | let g:color_pre = expand('<amatch>')
   augroup END
 
   colorscheme torte
@@ -45,6 +49,8 @@ func Test_colorscheme()
   call assert_equal('dark', &background)
   call assert_equal(1, g:before_colors)
   call assert_equal(2, g:after_colors)
+  call assert_equal('torte', g:color_pre)
+  call assert_equal('torte', g:color_after)
   call assert_equal("\ntorte", execute('colorscheme'))
 
   let a = substitute(execute('hi Search'), "\n\\s\\+", ' ', 'g')
@@ -53,6 +59,8 @@ func Test_colorscheme()
   call assert_match("\nSearch         xxx term=reverse ", a)
 
   call assert_fails('colorscheme does_not_exist', 'E185:')
+  call assert_equal('does_not_exist', g:color_pre)
+  call assert_equal('torte', g:color_after)
 
   exec 'colorscheme' colorscheme_saved
   augroup TestColors
@@ -1204,13 +1212,20 @@ endfunc
 
 " Move the mouse to the top-left in preparation for mouse events
 func PrepareForMouseEvent(args)
-  call extend(a:args, #{row: 1, col:1})
+  call extend(a:args, #{row: 1, col: 1})
   call test_gui_event('mouse', a:args)
+  let g:eventlist = []
   call feedkeys('', 'Lx!')
-  " on MS-Windows the event may have a slight delay
-  if has('win32')
-    sleep 20m
-  endif
+
+  " Wait a bit for the event.  I may not come if the mouse didn't move, wait up
+  " to 100 msec.
+  for n in range(10)
+    if len(g:eventlist) > 0
+      break
+    endif
+    sleep 10m
+  endfor
+  let g:eventlist = []
 endfunc
 
 func MouseWasMoved()
@@ -1221,7 +1236,7 @@ endfunc
 func Test_gui_mouse_move_event()
   let args = #{move: 1, button: 0, multiclick: 0, modifiers: 0}
 
-  " by default, does not generate mouse move events
+  " by default, no mouse move events are generated
   set mousemev&
   call assert_false(&mousemev)
 
@@ -1230,7 +1245,6 @@ func Test_gui_mouse_move_event()
 
   " start at mouse pos (1,1), clear counter
   call PrepareForMouseEvent(args)
-  let g:eventlist = []
 
   call extend(args, #{row: 3, col: 30, cell: v:true})
   call test_gui_event('mouse', args)
@@ -1240,13 +1254,12 @@ func Test_gui_mouse_move_event()
   call test_gui_event('mouse', args)
   call feedkeys('', 'Lx!')
 
-  " no events since mousemev off
+  " no events since 'mousemev' is off
   call assert_equal([], g:eventlist)
 
   " turn on mouse events and try the same thing
   set mousemev
   call PrepareForMouseEvent(args)
-  let g:eventlist = []
 
   call extend(args, #{row: 3, col: 30, cell: v:true})
   call test_gui_event('mouse', args)
@@ -1266,7 +1279,6 @@ func Test_gui_mouse_move_event()
   " wiggle the mouse around within a screen cell, shouldn't trigger events
   call extend(args, #{cell: v:false})
   call PrepareForMouseEvent(args)
-  let g:eventlist = []
 
   call extend(args, #{row: 1, col: 2, cell: v:false})
   call test_gui_event('mouse', args)
@@ -1400,36 +1412,36 @@ func Test_gui_drop_files()
   %argdelete
   " pressing shift when dropping files should change directory
   let save_cwd = getcwd()
-  call mkdir('Xdir1')
-  call writefile([], 'Xdir1/Xfile1')
-  call writefile([], 'Xdir1/Xfile2')
-  let d = #{files: ['Xdir1/Xfile1', 'Xdir1/Xfile2'], row: 1, col: 1,
+  call mkdir('Xdropdir1')
+  call writefile([], 'Xdropdir1/Xfile1')
+  call writefile([], 'Xdropdir1/Xfile2')
+  let d = #{files: ['Xdropdir1/Xfile1', 'Xdropdir1/Xfile2'], row: 1, col: 1,
         \ modifiers: 0x4}
   call test_gui_event('dropfiles', d)
-  call assert_equal('Xdir1', fnamemodify(getcwd(), ':t'))
+  call assert_equal('Xdropdir1', fnamemodify(getcwd(), ':t'))
   call assert_equal('Xfile1', @%)
   call chdir(save_cwd)
   " pressing shift when dropping directory and files should change directory
-  let d = #{files: ['Xdir1', 'Xdir1/Xfile2'], row: 1, col: 1, modifiers: 0x4}
+  let d = #{files: ['Xdropdir1', 'Xdropdir1/Xfile2'], row: 1, col: 1, modifiers: 0x4}
   call test_gui_event('dropfiles', d)
-  call assert_equal('Xdir1', fnamemodify(getcwd(), ':t'))
-  call assert_equal('Xdir1', fnamemodify(@%, ':t'))
+  call assert_equal('Xdropdir1', fnamemodify(getcwd(), ':t'))
+  call assert_equal('Xdropdir1', fnamemodify(@%, ':t'))
   call chdir(save_cwd)
   %bw!
   %argdelete
   " dropping a directory should edit it
-  let d = #{files: ['Xdir1'], row: 1, col: 1, modifiers: 0}
+  let d = #{files: ['Xdropdir1'], row: 1, col: 1, modifiers: 0}
   call test_gui_event('dropfiles', d)
-  call assert_equal('Xdir1', @%)
+  call assert_equal('Xdropdir1', @%)
   %bw!
   %argdelete
   " dropping only a directory name with Shift should ignore it
-  let d = #{files: ['Xdir1'], row: 1, col: 1, modifiers: 0x4}
+  let d = #{files: ['Xdropdir1'], row: 1, col: 1, modifiers: 0x4}
   call test_gui_event('dropfiles', d)
   call assert_equal('', @%)
   %bw!
   %argdelete
-  call delete('Xdir1', 'rf')
+  call delete('Xdropdir1', 'rf')
 
   " drop files in the command line. The GUI drop files adds the file names to
   " the low level input buffer. So need to use a cmdline map and feedkeys()

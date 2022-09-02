@@ -799,7 +799,7 @@ enddef
 def Test_count()
   count('ABC ABC ABC', 'b', true)->assert_equal(3)
   count('ABC ABC ABC', 'b', false)->assert_equal(0)
-  v9.CheckDefAndScriptFailure(['count(10, 1)'], ['E1013: Argument 1: type mismatch, expected string but got number', 'E1225: String, List or Dictionary required for argument 1'])
+  v9.CheckDefAndScriptFailure(['count(10, 1)'], 'E1225: String, List or Dictionary required for argument 1')
   v9.CheckDefAndScriptFailure(['count("a", [1], 2)'], ['E1013: Argument 3: type mismatch, expected bool but got number', 'E1212: Bool required for argument 3'])
   v9.CheckDefAndScriptFailure(['count("a", [1], 0, "b")'], ['E1013: Argument 4: type mismatch, expected number but got string', 'E1210: Number required for argument 4'])
   count([1, 2, 2, 3], 2)->assert_equal(2)
@@ -1898,6 +1898,46 @@ enddef
 
 def Test_getscriptinfo()
   v9.CheckDefAndScriptFailure(['getscriptinfo("x")'], ['E1013: Argument 1: type mismatch, expected dict<any> but got string', 'E1206: Dictionary required for argument 1'])
+
+  var lines1 =<< trim END
+    vim9script
+    g:loaded_script_id = expand("<SID>")
+    var XscriptVar = [1, {v: 2}]
+    func XgetScriptVar()
+      return XscriptVar
+    endfunc
+    func Xscript_legacy_func1()
+    endfunc
+    def Xscript_def_func1()
+    enddef
+    func g:Xscript_legacy_func2()
+    endfunc
+    def g:Xscript_def_func2()
+    enddef
+  END
+  writefile(lines1, 'X22script92')
+
+  var lines2 =<< trim END
+    source X22script92
+    var sid = matchstr(g:loaded_script_id, '<SNR>\zs\d\+\ze_')->str2nr()
+
+    var l = getscriptinfo({sid: sid, name: 'ignored'})
+    assert_match('X22script92$', l[0].name)
+    assert_equal(g:loaded_script_id, $"<SNR>{l[0].sid}_")
+    assert_equal(999999, l[0].version)
+    assert_equal(0, l[0].sourced)
+    assert_equal({XscriptVar: [1, {v: 2}]}, l[0].variables)
+    var funcs = ['Xscript_legacy_func2',
+          $"<SNR>{sid}_Xscript_legacy_func1",
+          $"<SNR>{sid}_Xscript_def_func1",
+          'Xscript_def_func2',
+          $"<SNR>{sid}_XgetScriptVar"]
+    for f in funcs
+      assert_true(index(l[0].functions, f) != -1)
+    endfor
+  END
+  v9.CheckDefAndScriptSuccess(lines2)
+  delete('X22script92')
 enddef
 
 def Test_gettabinfo()
@@ -2204,10 +2244,18 @@ def Test_islocked()
 enddef
 
 def Test_items()
-  v9.CheckDefFailure(['[]->items()'], 'E1013: Argument 1: type mismatch, expected dict<any> but got list<unknown>')
+  v9.CheckDefFailure(['123->items()'], 'E1225:')
   assert_equal([['a', 10], ['b', 20]], {'a': 10, 'b': 20}->items())
   assert_equal([], {}->items())
   assert_equal(['x', 'x'], {'a': 10, 'b': 20}->items()->map((_, _) => 'x'))
+
+  assert_equal([[0, 'a'], [1, 'b']], ['a', 'b']->items())
+  assert_equal([], []->items())
+  assert_equal([], test_null_list()->items())
+
+  assert_equal([[0, 'a'], [1, '웃'], [2, 'ć']], 'a웃ć'->items())
+  assert_equal([], ''->items())
+  assert_equal([], test_null_string()->items())
 enddef
 
 def Test_job_getchannel()

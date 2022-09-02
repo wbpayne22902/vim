@@ -2078,7 +2078,8 @@ set_context_for_expression(
     if ((cmdidx == CMD_execute
 		|| cmdidx == CMD_echo
 		|| cmdidx == CMD_echon
-		|| cmdidx == CMD_echomsg)
+		|| cmdidx == CMD_echomsg
+		|| cmdidx == CMD_echowindow)
 	    && xp->xp_context == EXPAND_EXPRESSION)
     {
 	for (;;)
@@ -6709,6 +6710,7 @@ get_echo_attr(void)
 /*
  * ":execute expr1 ..."	execute the result of an expression.
  * ":echomsg expr1 ..."	Print a message
+ * ":echowindow expr1 ..." Print a message in the messages window
  * ":echoerr expr1 ..."	Print an error
  * ":echoconsole expr1 ..." Print a message on stdout
  * Each gets spaces around each argument and a newline at the end for
@@ -6726,6 +6728,10 @@ ex_execute(exarg_T *eap)
     long	start_lnum = SOURCING_LNUM;
 
     ga_init2(&ga, 1, 80);
+#ifdef HAS_MESSAGE_WINDOW
+    if (eap->cmdidx == CMD_echowindow)
+	start_echowindow();
+#endif
 
     if (eap->skip)
 	++emsg_skip;
@@ -6780,7 +6786,9 @@ ex_execute(exarg_T *eap)
 	// use the first line of continuation lines for messages
 	SOURCING_LNUM = start_lnum;
 
-	if (eap->cmdidx == CMD_echomsg || eap->cmdidx == CMD_echoerr)
+	if (eap->cmdidx == CMD_echomsg
+		|| eap->cmdidx == CMD_echowindow
+		|| eap->cmdidx == CMD_echoerr)
 	{
 	    // Mark the already saved text as finishing the line, so that what
 	    // follows is displayed on a new line when scrolling back at the
@@ -6788,7 +6796,7 @@ ex_execute(exarg_T *eap)
 	    msg_sb_eol();
 	}
 
-	if (eap->cmdidx == CMD_echomsg)
+	if (eap->cmdidx == CMD_echomsg || eap->cmdidx == CMD_echowindow)
 	{
 	    msg_attr(ga.ga_data, echo_attr);
 	    out_flush();
@@ -6824,7 +6832,10 @@ ex_execute(exarg_T *eap)
 
     if (eap->skip)
 	--emsg_skip;
-
+#ifdef HAS_MESSAGE_WINDOW
+    if (eap->cmdidx == CMD_echowindow)
+	end_echowindow();
+#endif
     set_nextcmd(eap, arg);
 }
 

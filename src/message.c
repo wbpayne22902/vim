@@ -94,7 +94,7 @@ static int  verbose_did_open = FALSE;
 /*
  * msg(s) - displays the string 's' on the status line
  * When terminal not initialized (yet) mch_errmsg(..) is used.
- * return TRUE if wait_return not called
+ * return TRUE if wait_return() not called
  */
     int
 msg(char *s)
@@ -208,7 +208,7 @@ msg_strtrunc(
 	len = vim_strsize(s);
 	if (msg_scrolled != 0
 #ifdef HAS_MESSAGE_WINDOW
-		|| use_message_window()
+		|| in_echowindow
 #endif
 		)
 	    // Use all the columns.
@@ -631,7 +631,7 @@ do_perror(char *msg)
  * Rings the bell, if appropriate, and calls message() to do the real work
  * When terminal not initialized (yet) mch_errmsg(..) is used.
  *
- * Return TRUE if wait_return not called.
+ * Return TRUE if wait_return() not called.
  * Note: caller must check 'emsg_not_now()' before calling this.
  */
     static int
@@ -750,11 +750,15 @@ emsg_core(char_u *s)
 #endif
     }
 
-    emsg_on_display = TRUE;	// remember there is an error message
-    attr = HL_ATTR(HLF_E);	// set highlight mode for error messages
+#ifdef HAS_MESSAGE_WINDOW
+    if (!in_echowindow)
+#endif
+	emsg_on_display = TRUE;	    // remember there is an error message
+
+    attr = HL_ATTR(HLF_E);	    // set highlight mode for error messages
     if (msg_scrolled != 0)
 	need_wait_return = TRUE;    // needed in case emsg() is called after
-				    // wait_return has reset need_wait_return
+				    // wait_return() has reset need_wait_return
 				    // and a redraw is expected because
 				    // msg_scrolled is non-zero
 
@@ -962,7 +966,7 @@ msg_may_trunc(int force, char_u *s)
     // negative.
     room = (int)(Rows - cmdline_row - 1) * Columns + sc_col - 1;
     if (room > 0 && (force || (shortmess(SHM_TRUNC) && !exmode_active))
-	    && (n = (int)STRLEN(s) - room) > 0 && p_ch > 0)
+	    && (n = (int)STRLEN(s) - room) > 0)
     {
 	if (has_mbyte)
 	{
@@ -1425,21 +1429,6 @@ set_keep_msg_from_hist(void)
 #endif
 
 /*
- * Return TRUE when the message popup window should be used.
- */
-    int
-use_message_window(void)
-{
-#ifdef HAS_MESSAGE_WINDOW
-    // TRUE if there is no command line showing ('cmdheight' is zero and not
-    // already editing or showing a message) use a popup window for messages.
-    return p_ch == 0 && cmdline_row >= Rows;
-#else
-    return FALSE;
-#endif
-}
-
-/*
  * Prepare for outputting characters in the command line.
  */
     void
@@ -1454,7 +1443,7 @@ msg_start(void)
     }
 
 #ifdef FEAT_EVAL
-    if (need_clr_eos || p_ch == 0)
+    if (need_clr_eos)
     {
 	// Halfway an ":echo" command and getting an (error) message: clear
 	// any text from the command.
@@ -1464,12 +1453,15 @@ msg_start(void)
 #endif
 
 #ifdef HAS_MESSAGE_WINDOW
-    if (use_message_window())
+    if (in_echowindow)
     {
-	if (popup_message_win_visible() && msg_col > 0)
+	if (popup_message_win_visible()
+		    && ((msg_col > 0 && (msg_scroll || !full_screen))
+			|| in_echowindow))
 	{
 	    win_T *wp = popup_get_message_win();
 
+	    // start a new line
 	    curbuf = wp->w_buffer;
 	    ml_append(wp->w_buffer->b_ml.ml_line_count,
 					      (char_u *)"", (colnr_T)0, FALSE);
@@ -1488,8 +1480,9 @@ msg_start(void)
 #endif
 	    0;
     }
-    else if (msg_didout || p_ch == 0)	    // start message on next line
+    else if (msg_didout || in_echowindow)
     {
+	// start message on next line
 	msg_putchar('\n');
 	did_return = TRUE;
 	if (exmode_active != EXMODE_NORMAL)
@@ -2236,9 +2229,8 @@ msg_puts_attr_len(char *str, int maxlen, int attr)
 #define PUT_BELOW 2		// add below "lnum"
 				//
 #ifdef HAS_MESSAGE_WINDOW
-
 /*
- * Put text "t_s" until "s" in the message window.
+ * Put text "t_s" until "end" in the message window.
  * "where" specifies where to put the text.
  */
     static void
@@ -2285,7 +2277,7 @@ put_msg_win(win_T *wp, int where, char_u *t_s, char_u *end, linenr_T lnum)
     redraw_win_later(wp, UPD_NOT_VALID);
 
     // set msg_col so that a newline is written if needed
-    msg_col = (int)STRLEN(t_s);
+    msg_col += (int)(end - t_s);
 }
 #endif
 
@@ -2314,7 +2306,7 @@ msg_puts_display(
     win_T	*msg_win = NULL;
     linenr_T    lnum = 1;
 
-    if (use_message_window())
+    if (in_echowindow)
     {
 	msg_win = popup_get_message_win();
 
@@ -2435,7 +2427,7 @@ msg_puts_display(
 	    {
 #endif
 		inc_msg_scrolled();
-		need_wait_return = TRUE; // may need wait_return in main()
+		need_wait_return = TRUE; // may need wait_return() in main()
 		redraw_cmdline = TRUE;
 		if (cmdline_row > 0 && !exmode_active)
 		    --cmdline_row;
@@ -2628,7 +2620,7 @@ message_filtered(char_u *msg)
 msg_scroll_up(void)
 {
 #ifdef HAS_MESSAGE_WINDOW
-    if (use_message_window())
+    if (in_echowindow)
 	return;
 #endif
 #ifdef FEAT_GUI
@@ -3654,6 +3646,10 @@ msg_clr_eos(void)
     void
 msg_clr_eos_force(void)
 {
+#ifdef HAS_MESSAGE_WINDOW
+    if (in_echowindow)
+	return;  // messages go into a popup
+#endif
     if (msg_use_printf())
     {
 	if (full_screen)	// only when termcap codes are valid
@@ -3664,7 +3660,7 @@ msg_clr_eos_force(void)
 		out_str(T_CE);	// clear to end of line
 	}
     }
-    else if (p_ch > 0)
+    else
     {
 #ifdef FEAT_RIGHTLEFT
 	if (cmdmsg_rl)
@@ -3695,8 +3691,8 @@ msg_clr_cmdline(void)
 
 /*
  * end putting a message on the screen
- * call wait_return if the message does not fit in the available space
- * return TRUE if wait_return not called.
+ * call wait_return() if the message does not fit in the available space
+ * return TRUE if wait_return() not called.
  */
     int
 msg_end(void)
@@ -3725,7 +3721,7 @@ msg_check(void)
 {
     if (msg_row == Rows - 1 && msg_col >= sc_col
 #ifdef HAS_MESSAGE_WINDOW
-		&& !use_message_window()
+		&& !in_echowindow
 #endif
 	    )
     {
