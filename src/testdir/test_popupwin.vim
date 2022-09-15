@@ -4104,7 +4104,7 @@ endfunc
 
 
 func Test_popup_setoptions_other_tab()
-  new Xfile
+  new Xpotfile
   let winid = win_getid()
   call setline(1, 'some text')
   call prop_type_add('textprop', {})
@@ -4116,7 +4116,7 @@ func Test_popup_setoptions_other_tab()
 
   tabclose
   call popup_close(id)
-  bwipe! Xfile
+  bwipe! Xpotfile
   call prop_type_delete('textprop')
 endfunc
 
@@ -4172,6 +4172,29 @@ func Test_bufdel_skips_popupwin_buffer()
     let id = popup_create("Some text", {})
     %bd
     call popup_close(id)
+endfunc
+
+func Test_term_popup_bufline()
+  " very specific situation where a non-existing buffer line is used, leading
+  " to an ml_get error
+  CheckScreendump
+
+  let lines =<< trim END
+      vim9script
+      &scrolloff = 5
+      term_start('seq 1 5', {term_finish: 'open'})
+      timer_start(50, (_) => {
+	  set cpoptions&vim
+	  var buf = popup_create([], {})->winbufnr()
+	  appendbufline(buf, 0, range(5))
+      })
+  END
+  call writefile(lines, 'XtestTermPopup', 'D')
+  let buf = RunVimInTerminal('-S XtestTermPopup', #{rows: 15})
+  call VerifyScreenDump(buf, 'Test_term_popup_bufline', {})
+
+  " clean up
+  call StopVimInTerminal(buf)
 endfunc
 
 

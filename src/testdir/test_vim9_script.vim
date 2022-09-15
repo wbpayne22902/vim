@@ -968,11 +968,11 @@ def Test_cnext_works_in_catch()
   var lines =<< trim END
       vim9script
       au BufEnter * eval 1 + 2
-      writefile(['text'], 'Xfile1')
-      writefile(['text'], 'Xfile2')
+      writefile(['text'], 'Xcncfile1')
+      writefile(['text'], 'Xcncfile2')
       var items = [
-          {lnum: 1, filename: 'Xfile1', valid: true},
-          {lnum: 1, filename: 'Xfile2', valid: true}
+          {lnum: 1, filename: 'Xcncfile1', valid: true},
+          {lnum: 1, filename: 'Xcncfile2', valid: true}
         ]
       setqflist([], ' ', {items: items})
       cwindow
@@ -988,17 +988,17 @@ def Test_cnext_works_in_catch()
 
       CnextOrCfirst()
       CnextOrCfirst()
-      writefile([getqflist({idx: 0}).idx], 'Xresult')
+      writefile([getqflist({idx: 0}).idx], 'Xcncresult')
       qall
   END
   writefile(lines, 'XCatchCnext')
   g:RunVim([], [], '--clean -S XCatchCnext')
-  assert_equal(['1'], readfile('Xresult'))
+  assert_equal(['1'], readfile('Xcncresult'))
 
-  delete('Xfile1')
-  delete('Xfile2')
+  delete('Xcncfile1')
+  delete('Xcncfile2')
   delete('XCatchCnext')
-  delete('Xresult')
+  delete('Xcncresult')
 enddef
 
 def Test_throw_skipped()
@@ -2259,17 +2259,33 @@ def Test_for_loop()
 enddef
 
 def Test_for_loop_with_closure()
+  # using the loop variable in a closure results in the last used value
   var lines =<< trim END
       var flist: list<func>
       for i in range(5)
-        var inloop = i
-        flist[i] = () => inloop
+        flist[i] = () => i
       endfor
       for i in range(5)
         assert_equal(4, flist[i]())
       endfor
   END
   v9.CheckDefAndScriptSuccess(lines)
+
+  # using a local variable set to the loop variable in a closure results in the
+  # value at that moment
+  lines =<< trim END
+      var flist: list<func>
+      for i in range(5)
+        var inloop = i
+        flist[i] = () => inloop
+      endfor
+      for i in range(5)
+        assert_equal(i, flist[i]())
+      endfor
+  END
+  # FIXME
+  # v9.CheckDefAndScriptSuccess(lines)
+  v9.CheckScriptSuccess(['vim9script'] + lines)
 
   lines =<< trim END
       var flist: list<func>
@@ -2280,10 +2296,12 @@ def Test_for_loop_with_closure()
             }
       endfor
       for i in range(5)
-        assert_equal(4, flist[i]())
+        assert_equal(i, flist[i]())
       endfor
   END
-  v9.CheckDefAndScriptSuccess(lines)
+  # FIXME
+  # v9.CheckDefAndScriptSuccess(lines)
+  v9.CheckScriptSuccess(['vim9script'] + lines)
 enddef
 
 def Test_for_loop_fails()
@@ -2708,7 +2726,7 @@ def Test_vim9_comment()
       '#{something',
       ], 'E1170:')
 
-  split Xfile
+  split Xv9cfile
   v9.CheckScriptSuccess([
       'vim9script',
       'edit #something',
@@ -3544,20 +3562,20 @@ def Test_restoring_cpo()
     mkdir('Xhome')
     var lines =<< trim END
         vim9script
-        writefile(['before: ' .. &cpo], 'Xresult')
+        writefile(['before: ' .. &cpo], 'Xrporesult')
         set cpo+=M
-        writefile(['after: ' .. &cpo], 'Xresult', 'a')
+        writefile(['after: ' .. &cpo], 'Xrporesult', 'a')
     END
     writefile(lines, 'Xhome/.vimrc')
 
     lines =<< trim END
-        call writefile(['later: ' .. &cpo], 'Xresult', 'a')
+        call writefile(['later: ' .. &cpo], 'Xrporesult', 'a')
     END
     writefile(lines, 'Xlegacy')
 
     lines =<< trim END
         vim9script
-        call writefile(['vim9: ' .. &cpo], 'Xresult', 'a')
+        call writefile(['vim9: ' .. &cpo], 'Xrporesult', 'a')
         qa
     END
     writefile(lines, 'Xvim9')
@@ -3570,13 +3588,13 @@ def Test_restoring_cpo()
         'before: aABceFs',
         'after: aABceFsM',
         'later: aABceFsM',
-        'vim9: aABceFs'], readfile('Xresult'))
+        'vim9: aABceFs'], readfile('Xrporesult'))
 
     $HOME = save_HOME
     delete('Xhome', 'rf')
     delete('Xlegacy')
     delete('Xvim9')
-    delete('Xresult')
+    delete('Xrporesult')
   endif
 enddef
 
@@ -4241,13 +4259,12 @@ func Test_misplaced_type()
 endfunc
 
 def Run_Test_misplaced_type()
-  writefile(['let g:somevar = "asdf"'], 'XTest_misplaced_type')
+  writefile(['let g:somevar = "asdf"'], 'XTest_misplaced_type', 'D')
   var buf = g:RunVimInTerminal('-S XTest_misplaced_type', {'rows': 6})
-  term_sendkeys(buf, ":vim9cmd echo islocked('g:somevar: string')\<CR>")
+  term_sendkeys(buf, ":vim9cmd echo islocked('somevar: string')\<CR>")
   g:VerifyScreenDump(buf, 'Test_misplaced_type', {})
 
   g:StopVimInTerminal(buf)
-  delete('XTest_misplaced_type')
 enddef
 
 " Ensure echo doesn't crash when stringifying empty variables.

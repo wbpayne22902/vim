@@ -31,6 +31,13 @@ static poppos_entry_T poppos_entries[] = {
 #ifdef HAS_MESSAGE_WINDOW
 // Window used for ":echowindow"
 static win_T *message_win = NULL;
+
+// Flag set when a message is added to the message window, timer is started
+// when the message window is drawn.  This might be after pressing Enter at the
+// hit-enter prompt.
+static int    start_message_win_timer = FALSE;
+
+static void may_start_message_win_timer(win_T *wp);
 #endif
 
 static void popup_adjust_position(win_T *wp);
@@ -1301,9 +1308,14 @@ popup_adjust_position(win_T *wp)
 		wp->w_winrow = Rows - 1;
 	}
 	if (wp->w_popup_pos == POPPOS_BOTTOM)
-	    // assume that each buffer line takes one screen line
+	{
+	    // Assume that each buffer line takes one screen line, and one line
+	    // for the top border.  First make sure cmdline_row is valid,
+	    // calling update_screen() will set it only later.
+	    compute_cmdrow();
 	    wp->w_winrow = MAX(cmdline_row
 				    - wp->w_buffer->b_ml.ml_line_count - 1, 0);
+	}
 
 	if (!use_wantcol)
 	    center_hor = TRUE;
@@ -2769,9 +2781,7 @@ f_popup_settext(typval_T *argvars, typval_T *rettv UNUSED)
     wp = find_popup_win(id);
     if (wp != NULL)
     {
-	if (argvars[1].v_type != VAR_STRING && argvars[1].v_type != VAR_LIST)
-	    semsg(_(e_invalid_argument_str), tv_get_string(&argvars[1]));
-	else
+	if (check_for_string_or_list_arg(argvars, 1) != FAIL)
 	{
 	    popup_set_buffer_text(wp->w_buffer, argvars[1]);
 	    redraw_win_later(wp, UPD_NOT_VALID);
@@ -4265,6 +4275,11 @@ update_popups(void (*win_update)(win_T *wp))
 
 	// Back to the normal zindex.
 	screen_zindex = 0;
+
+#ifdef HAS_MESSAGE_WINDOW
+	// if this was the message window popup may start the timer now
+	may_start_message_win_timer(wp);
+#endif
     }
 
 #if defined(FEAT_SEARCH_EXTRA)
@@ -4510,8 +4525,18 @@ popup_show_message_win(void)
 	    popup_update_color(message_win, TYPE_MESSAGE_WIN);
 	    popup_show(message_win);
 	}
+	start_message_win_timer = TRUE;
+    }
+}
+
+    static void
+may_start_message_win_timer(win_T *wp)
+{
+    if (wp == message_win && start_message_win_timer)
+    {
 	if (message_win->w_popup_timer != NULL)
 	    timer_start(message_win->w_popup_timer);
+	start_message_win_timer = FALSE;
     }
 }
 
@@ -4547,15 +4572,17 @@ start_echowindow(void)
     void
 end_echowindow(void)
 {
-    // show the message window now
-    redraw_cmd(FALSE);
+    in_echowindow = FALSE;
+
+    if ((State & MODE_HITRETURN) == 0)
+	// show the message window now
+	redraw_cmd(FALSE);
 
     // do not overwrite messages
     // TODO: only for message window
     msg_didout = TRUE;
     if (msg_col == 0)
 	msg_col = 1;
-    in_echowindow = FALSE;
 }
 #endif
 

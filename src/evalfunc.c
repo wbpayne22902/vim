@@ -89,6 +89,7 @@ static void f_inputsecret(typval_T *argvars, typval_T *rettv);
 static void f_interrupt(typval_T *argvars, typval_T *rettv);
 static void f_invert(typval_T *argvars, typval_T *rettv);
 static void f_islocked(typval_T *argvars, typval_T *rettv);
+static void f_keytrans(typval_T *argvars, typval_T *rettv);
 static void f_last_buffer_nr(typval_T *argvars, typval_T *rettv);
 static void f_libcall(typval_T *argvars, typval_T *rettv);
 static void f_libcallnr(typval_T *argvars, typval_T *rettv);
@@ -872,6 +873,7 @@ arg_repeat1(type_T *type, type_T *decl_type UNUSED, argcontext_T *context)
 	    || type->tt_type == VAR_UNKNOWN
 	    || type->tt_type == VAR_STRING
 	    || type->tt_type == VAR_NUMBER
+	    || type->tt_type == VAR_BLOB
 	    || type->tt_type == VAR_LIST)
 	return OK;
 
@@ -2057,6 +2059,8 @@ static funcentry_T global_functions[] =
 			ret_string,	    f_json_encode},
     {"keys",		1, 1, FEARG_1,	    arg1_dict_any,
 			ret_list_string,    f_keys},
+    {"keytrans",	1, 1, FEARG_1,	    arg1_string,
+			ret_string,	    f_keytrans},
     {"last_buffer_nr",	0, 0, 0,	    NULL,	// obsolete
 			ret_number,	    f_last_buffer_nr},
     {"len",		1, 1, FEARG_1,	    arg1_len,
@@ -3607,17 +3611,13 @@ f_deepcopy(typval_T *argvars, typval_T *rettv)
 {
     varnumber_T	noref = 0;
 
-    if (in_vim9script()
-	    && (check_for_opt_bool_arg(argvars, 1) == FAIL))
+    if (check_for_opt_bool_arg(argvars, 1) == FAIL)
 	return;
 
     if (argvars[1].v_type != VAR_UNKNOWN)
 	noref = tv_get_bool_chk(&argvars[1], NULL);
-    if (noref < 0 || noref > 1)
-	semsg(_(e_using_number_as_bool_nr), noref);
-    else
-	item_copy(&argvars[0], rettv, TRUE, TRUE,
-						noref == 0 ? get_copyID() : 0);
+
+    item_copy(&argvars[0], rettv, TRUE, TRUE, noref == 0 ? get_copyID() : 0);
 }
 
 /*
@@ -4404,6 +4404,10 @@ f_foreground(typval_T *argvars UNUSED, typval_T *rettv UNUSED)
 #endif
 }
 
+/*
+ * "function()" function
+ * "funcref()" function
+ */
     static void
 common_function(typval_T *argvars, typval_T *rettv, int is_funcref)
 {
@@ -5257,21 +5261,11 @@ f_gettagstack(typval_T *argvars, typval_T *rettv)
     static void
 f_gettext(typval_T *argvars, typval_T *rettv)
 {
-    if (in_vim9script() && check_for_string_arg(argvars, 0) == FAIL)
+    if (check_for_nonempty_string_arg(argvars, 0) == FAIL)
 	return;
 
-    if (argvars[0].v_type != VAR_STRING
-	    || argvars[0].vval.v_string == NULL
-	    || *argvars[0].vval.v_string == NUL)
-    {
-	semsg(_(e_invalid_argument_str), tv_get_string(&argvars[0]));
-    }
-    else
-    {
-	rettv->v_type = VAR_STRING;
-	rettv->vval.v_string = vim_strsave(
-					(char_u *)_(argvars[0].vval.v_string));
-    }
+    rettv->v_type = VAR_STRING;
+    rettv->vval.v_string = vim_strsave((char_u *)_(argvars[0].vval.v_string));
 }
 
 // for VIM_VERSION_ defines
@@ -5664,13 +5658,7 @@ f_has(typval_T *argvars, typval_T *rettv)
 		0
 #endif
 		},
-	{"footer",
-#ifdef FEAT_FOOTER
-		1
-#else
-		0
-#endif
-		},
+	{"footer", 0},
 	{"fork",
 #if !defined(USE_SYSTEM) && defined(UNIX)
 		1
@@ -7151,6 +7139,24 @@ f_islocked(typval_T *argvars, typval_T *rettv)
 }
 
 /*
+ * "keytrans()" function
+ */
+    static void
+f_keytrans(typval_T *argvars, typval_T *rettv)
+{
+    char_u *escaped;
+
+    rettv->v_type = VAR_STRING;
+    if (check_for_string_arg(argvars, 0) == FAIL
+	    || argvars[0].vval.v_string == NULL)
+	return;
+    // Need to escape K_SPECIAL and CSI for mb_unescape().
+    escaped = vim_strsave_escape_csi(argvars[0].vval.v_string);
+    rettv->vval.v_string = str2special_save(escaped, TRUE, TRUE);
+    vim_free(escaped);
+}
+
+/*
  * "last_buffer_nr()" function.
  */
     static void
@@ -8419,18 +8425,19 @@ f_rename(typval_T *argvars, typval_T *rettv)
 f_repeat(typval_T *argvars, typval_T *rettv)
 {
     char_u	*p;
-    int		n;
+    varnumber_T	n;
     int		slen;
     int		len;
     char_u	*r;
     int		i;
 
     if (in_vim9script()
-	    && (check_for_string_or_number_or_list_arg(argvars, 0) == FAIL
+	    && (check_for_string_or_number_or_list_or_blob_arg(argvars, 0)
+		    == FAIL
 		|| check_for_number_arg(argvars, 1) == FAIL))
 	return;
 
-    n = (int)tv_get_number(&argvars[1]);
+    n = tv_get_number(&argvars[1]);
     if (argvars[0].v_type == VAR_LIST)
     {
 	if (rettv_list_alloc(rettv) == OK && argvars[0].vval.v_list != NULL)
@@ -8438,6 +8445,35 @@ f_repeat(typval_T *argvars, typval_T *rettv)
 		if (list_extend(rettv->vval.v_list,
 					argvars[0].vval.v_list, NULL) == FAIL)
 		    break;
+    }
+    else if (argvars[0].v_type == VAR_BLOB)
+    {
+	if (rettv_blob_alloc(rettv) == FAIL
+		|| argvars[0].vval.v_blob == NULL
+		|| n <= 0)
+	    return;
+
+	slen = argvars[0].vval.v_blob->bv_ga.ga_len;
+	len = (int)slen * n;
+	if (len <= 0)
+	    return;
+
+	if (ga_grow(&rettv->vval.v_blob->bv_ga, len) == FAIL)
+	    return;
+
+	rettv->vval.v_blob->bv_ga.ga_len = len;
+
+	for (i = 0; i < slen; ++i)
+	    if (blob_get(argvars[0].vval.v_blob, i) != 0)
+		break;
+
+	if (i == slen)
+	    // No need to copy since all bytes are already zero
+	    return;
+
+	for (i = 0; i < n; ++i)
+	    blob_set_range(rettv->vval.v_blob,
+		    (long)i * slen, ((long)i + 1) * slen - 1, argvars);
     }
     else
     {
@@ -9641,7 +9677,9 @@ f_settagstack(typval_T *argvars, typval_T *rettv)
     // default is to replace the stack.
     if (argvars[2].v_type == VAR_UNKNOWN)
 	action = 'r';
-    else if (argvars[2].v_type == VAR_STRING)
+    else if (check_for_string_arg(argvars, 2) == FAIL)
+	return;
+    else
     {
 	char_u	*actstr;
 	actstr = tv_get_string_chk(&argvars[2]);
@@ -9655,11 +9693,6 @@ f_settagstack(typval_T *argvars, typval_T *rettv)
 	    semsg(_(e_invalid_action_str_2), actstr);
 	    return;
 	}
-    }
-    else
-    {
-	emsg(_(e_string_required));
-	return;
     }
 
     if (set_tagstack(wp, d, action) == OK)
