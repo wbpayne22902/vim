@@ -2452,7 +2452,11 @@ func_clear_free(ufunc_T *fp, int force)
  * This is for when a compiled function defines a global function.
  */
     int
-copy_func(char_u *lambda, char_u *global, ectx_T *ectx)
+copy_lambda_to_global_func(
+	char_u		*lambda,
+	char_u		*global,
+	loopvarinfo_T	*loopvarinfo,
+	ectx_T		*ectx)
 {
     ufunc_T *ufunc = find_func_even_dead(lambda, FFED_IS_GLOBAL);
     ufunc_T *fp = NULL;
@@ -2519,13 +2523,12 @@ copy_func(char_u *lambda, char_u *global, ectx_T *ectx)
 
 	if (pt == NULL)
 	    goto failed;
-	if (fill_partial_and_closure(pt, ufunc, ectx) == FAIL)
+	if (fill_partial_and_closure(pt, ufunc, loopvarinfo, ectx) == FAIL)
 	{
 	    vim_free(pt);
 	    goto failed;
 	}
 	ufunc->uf_partial = pt;
-	--pt->pt_refcount;  // not actually referenced here
     }
 
     return OK;

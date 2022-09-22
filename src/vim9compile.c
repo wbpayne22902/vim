@@ -54,6 +54,9 @@ lookup_local(char_u *name, size_t len, lvar_T *lvar, cctx_T *cctx)
 	    {
 		*lvar = *lvp;
 		lvar->lv_from_outer = 0;
+		// If the variable was declared inside a loop set
+		// lvar->lv_loop_idx and lvar->lv_loop_depth.
+		get_loop_var_idx(cctx, idx, lvar);
 	    }
 	    return OK;
 	}
@@ -1193,7 +1196,7 @@ generate_loadvar(
 	    {
 		if (lvar->lv_from_outer > 0)
 		    generate_LOADOUTER(cctx, lvar->lv_idx, lvar->lv_from_outer,
-									 type);
+				 lvar->lv_loop_depth, lvar->lv_loop_idx, type);
 		else
 		    generate_LOAD(cctx, ISN_LOAD, lvar->lv_idx, NULL, type);
 	    }
@@ -2382,9 +2385,7 @@ compile_assignment(char_u *arg, exarg_T *eap, cmdidx_T cmdidx, cctx_T *cctx)
 			r = generate_PUSHBOOL(cctx, VVAL_FALSE);
 			break;
 		    case VAR_FLOAT:
-#ifdef FEAT_FLOAT
 			r = generate_PUSHF(cctx, 0.0);
-#endif
 			break;
 		    case VAR_STRING:
 			r = generate_PUSHS(cctx, NULL);
@@ -2453,11 +2454,9 @@ compile_assignment(char_u *arg, exarg_T *eap, cmdidx_T cmdidx, cctx_T *cctx)
 		expected = lhs.lhs_member_type;
 		stacktype = get_type_on_stack(cctx, 0);
 		if (
-#ifdef FEAT_FLOAT
 		    // If variable is float operation with number is OK.
 		    !(expected == &t_float && (stacktype == &t_number
 			    || stacktype == &t_number_bool)) &&
-#endif
 		    need_type(stacktype, expected, -1, 0, cctx,
 							 FALSE, FALSE) == FAIL)
 		    goto theend;
