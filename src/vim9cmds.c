@@ -881,7 +881,7 @@ compile_for(char_u *arg_start, cctx_T *cctx)
 
     // Reserve a variable to store the loop iteration counter and initialize it
     // to -1.
-    loop_lvar = reserve_local(cctx, (char_u *)"", 0, FALSE, &t_number);
+    loop_lvar = reserve_local(cctx, (char_u *)"", 0, ASSIGN_VAR, &t_number);
     if (loop_lvar == NULL)
     {
 	drop_scope(cctx);
@@ -894,7 +894,7 @@ compile_for(char_u *arg_start, cctx_T *cctx)
     // Reserve a variable to store ec_funcrefs.ga_len, used in ISN_ENDLOOP.
     // The variable index is always the loop var index plus one.
     // It is not used when no closures are encountered, we don't know yet.
-    funcref_lvar = reserve_local(cctx, (char_u *)"", 0, FALSE, &t_number);
+    funcref_lvar = reserve_local(cctx, (char_u *)"", 0, ASSIGN_VAR, &t_number);
     if (funcref_lvar == NULL)
     {
 	drop_scope(cctx);
@@ -1050,7 +1050,8 @@ compile_for(char_u *arg_start, cctx_T *cctx)
 			&& need_type_where(item_type, lhs_type, -1,
 					    where, cctx, FALSE, FALSE) == FAIL)
 		    goto failed;
-		var_lvar = reserve_local(cctx, arg, varlen, TRUE, lhs_type);
+		var_lvar = reserve_local(cctx, arg, varlen, ASSIGN_CONST,
+								     lhs_type);
 		if (var_lvar == NULL)
 		    // out of memory or used as an argument
 		    goto failed;
@@ -1182,7 +1183,7 @@ compile_while(char_u *arg, cctx_T *cctx)
 
     // Reserve a variable to store ec_funcrefs.ga_len, used in ISN_ENDLOOP.
     // It is not used when no closures are encountered, we don't know yet.
-    funcref_lvar = reserve_local(cctx, (char_u *)"", 0, FALSE, &t_number);
+    funcref_lvar = reserve_local(cctx, (char_u *)"", 0, ASSIGN_VAR, &t_number);
     if (funcref_lvar == NULL)
     {
 	drop_scope(cctx);
@@ -1970,10 +1971,11 @@ compile_defer(char_u *arg_start, cctx_T *cctx)
  * compile "echomsg expr"
  * compile "echoerr expr"
  * compile "echoconsole expr"
+ * compile "echowindow expr" - may have cmd_count set
  * compile "execute expr"
  */
     char_u *
-compile_mult_expr(char_u *arg, int cmdidx, cctx_T *cctx)
+compile_mult_expr(char_u *arg, int cmdidx, long cmd_count, cctx_T *cctx)
 {
     char_u	*p = arg;
     char_u	*prev = arg;
@@ -1981,6 +1983,7 @@ compile_mult_expr(char_u *arg, int cmdidx, cctx_T *cctx)
     int		count = 0;
     int		start_ctx_lnum = cctx->ctx_lnum;
     type_T	*type;
+    int		r = OK;
 
     for (;;)
     {
@@ -2014,23 +2017,23 @@ compile_mult_expr(char_u *arg, int cmdidx, cctx_T *cctx)
 	cctx->ctx_lnum = start_ctx_lnum;
 
 	if (cmdidx == CMD_echo || cmdidx == CMD_echon)
-	    generate_ECHO(cctx, cmdidx == CMD_echo, count);
+	    r = generate_ECHO(cctx, cmdidx == CMD_echo, count);
 	else if (cmdidx == CMD_execute)
-	    generate_MULT_EXPR(cctx, ISN_EXECUTE, count);
+	    r = generate_MULT_EXPR(cctx, ISN_EXECUTE, count);
 	else if (cmdidx == CMD_echomsg)
-	    generate_MULT_EXPR(cctx, ISN_ECHOMSG, count);
+	    r = generate_MULT_EXPR(cctx, ISN_ECHOMSG, count);
 #ifdef HAS_MESSAGE_WINDOW
 	else if (cmdidx == CMD_echowindow)
-	    generate_MULT_EXPR(cctx, ISN_ECHOWINDOW, count);
+	    r = generate_ECHOWINDOW(cctx, count, cmd_count);
 #endif
 	else if (cmdidx == CMD_echoconsole)
-	    generate_MULT_EXPR(cctx, ISN_ECHOCONSOLE, count);
+	    r = generate_MULT_EXPR(cctx, ISN_ECHOCONSOLE, count);
 	else
-	    generate_MULT_EXPR(cctx, ISN_ECHOERR, count);
+	    r = generate_MULT_EXPR(cctx, ISN_ECHOERR, count);
 
 	cctx->ctx_lnum = save_lnum;
     }
-    return p;
+    return r == OK ? p : NULL;
 }
 
 /*

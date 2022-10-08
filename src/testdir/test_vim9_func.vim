@@ -1515,6 +1515,20 @@ def Test_lambda_invalid_block()
   v9.CheckDefAndScriptFailure(lines, 'E488: Trailing characters: | echo')
 enddef
 
+def Test_lambda_with_following_cmd()
+  var lines =<< trim END
+      set ts=2
+      var Lambda = () => {
+          set ts=4
+        } | set ts=3
+      assert_equal(3, &ts)
+      Lambda()
+      assert_equal(4, &ts)
+  END
+  v9.CheckDefAndScriptSuccess(lines)
+  set ts=8
+enddef
+
 def Test_pass_legacy_lambda_to_def_func()
   var lines =<< trim END
       vim9script
@@ -3518,34 +3532,6 @@ def Test_partial_null_function()
   v9.CheckDefAndScriptSuccess(lines)
 enddef
 
-" Using "idx" from a legacy global function does not work.
-" This caused a crash when called from legacy context.
-func Test_partial_call_fails()
-  let lines =<< trim END
-      vim9script
-
-      var l = ['a', 'b', 'c']
-      def Iter(container: any): any
-        var idx = -1
-        var obj = {state: container}
-        def g:NextItem__(self: dict<any>): any
-          ++idx
-          return self.state[idx]
-        enddef
-        obj.__next__ = function('g:NextItem__', [obj])
-        return obj
-      enddef
-
-      var it = Iter(l)
-      echo it.__next__()
-  END
-  call writefile(lines, 'XpartialCall', 'D')
-  try
-    source XpartialCall
-  catch /E1248:/
-  endtry
-endfunc
-
 def Test_cmd_modifier()
   tab echo '0'
   v9.CheckDefFailure(['5tab echo 3'], 'E16:')
@@ -4222,6 +4208,25 @@ def Test_numbered_function_reference()
   # check that the function still exists
   assert_equal(output, execute('legacy func g:mydict.afunc'))
   unlet g:mydict
+enddef
+
+def Test_numbered_function_call()
+  var lines =<< trim END
+      let s:legacyscript = {}
+      func s:legacyscript.Helper() abort
+        return "Success"
+      endfunc
+      let g:legacyscript = deepcopy(s:legacyscript)
+
+      let g:legacy_result = eval("g:legacyscript.Helper()")
+      vim9cmd g:vim9_result = eval("g:legacyscript.Helper()")
+  END
+  v9.CheckScriptSuccess(lines)
+  assert_equal('Success', g:legacy_result)
+  assert_equal('Success', g:vim9_result)
+
+  unlet g:legacy_result
+  unlet g:vim9_result
 enddef
 
 def Test_go_beyond_end_of_cmd()

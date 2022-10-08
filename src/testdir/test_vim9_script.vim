@@ -297,6 +297,14 @@ def Test_const()
     constdict->assert_equal({one: 1, two: {five: 55, six: 66}, three: 3})
   END
   v9.CheckDefAndScriptSuccess(lines)
+
+  # "any" type with const flag is recognized as "any"
+  lines =<< trim END
+      const dict: dict<any> = {foo: {bar: 42}}
+      const foo = dict.foo
+      assert_equal(v:t_number, type(foo.bar))
+  END
+  v9.CheckDefAndScriptSuccess(lines)
 enddef
 
 def Test_const_bang()
@@ -2471,10 +2479,11 @@ def Test_for_loop_fails()
   lines =<< trim END
       var l: list<dict<any>> = [{n: 1}]
       for item: dict<number> in l
-        item->extend({s: ''})
+        var d = {s: ''}
+        d->extend(item)
       endfor
   END
-  v9.CheckDefExecAndScriptFailure(lines, 'E1013: Argument 2: type mismatch, expected dict<number> but got dict<string>')
+  v9.CheckDefExecAndScriptFailure(lines, 'E1013: Argument 2: type mismatch, expected dict<string> but got dict<number>')
 
   lines =<< trim END
       for a in range(3)

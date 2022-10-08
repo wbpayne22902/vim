@@ -45,9 +45,9 @@ CFLAGS +=\
 	-DFEAT_NORMAL
 else
 
-# Vim 'small' build
+# Vim 'small' build - now an alias for 'tiny'
 ifeq ($(BUILD),small)
-CFLAGS += -DFEAT_SMALL
+CFLAGS += -DFEAT_TINY
 else
 
 # Vim 'tiny' build
@@ -68,7 +68,8 @@ ifeq ($(UNM),AROS)
 LDFLAGS = -DHAVE_FSYNC -ldebug
 else
 ifeq ($(UNM),MorphOS)
-LDFLAGS = -ldebug -noixemul
+CFLAGS += -noixemul
+LDFLAGS = -ldebug -lm -noixemul
 endif
 endif
 endif
